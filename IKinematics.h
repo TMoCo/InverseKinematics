@@ -26,7 +26,7 @@ class IKinematics
     // applies inverse kinematics for a single point to get the new angles as an array of doubles
     double* computeAngles();
     // createse a jacobian matrix for n points
-    Eigen::MatrixXf computeJacobian(int index, int nPoints);
+    Eigen::MatrixXf computeJacobian(int index);
     Eigen::MatrixXf invertJacobian(Eigen::MatrixXf jacobian);
     void computeIK(glm::vec3 t, int index);
     // return an array of new positions for computing the jacobian
@@ -35,6 +35,8 @@ class IKinematics
     glm::vec3 getJointWorldPos(int index, bool test);
     // get the position of a joint in world space with small change to the angle in channel
     glm::vec3 getJointWorldPos(int index, int channelIndex, bool test);
+    // get the transform of a joint 
+    glm::mat4 getJointWorldTransform(int index);
     // returns the rotation of a joint as a mat4
     glm::mat4 getJointRotation(BVH::Joint* joint, int channelIndex);
 

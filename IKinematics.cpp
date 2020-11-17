@@ -25,28 +25,37 @@ IKinematics::~IKinematics()
 }
 
 // pass the joint position as an argument (we have a method in BVH widget)
-Eigen::MatrixXf IKinematics::computeJacobian(int index,  int nPoints)
+Eigen::MatrixXf IKinematics::computeJacobian(int index)
 {
     // unitialised jacobian 
-    Eigen::MatrixXf jacobian = Eigen::MatrixXf(3*nPoints, bvhViewer->bvhObj->num_channel-3);
+    Eigen::MatrixXf jacobian = Eigen::MatrixXf(3*(bvhViewer->constraints.size() + 1), bvhViewer->bvhObj->num_channel-3);
     // get the world position of the joint we want to change
     glm::vec3 jointPos1 = getJointWorldPos(index, false);
     // std::cout << jointPos1.x << " " << jointPos1.y << " " << jointPos1.z << std::endl;
-    // loop over the columns
-    for(int i = 3; i < bvhViewer->bvhObj->num_channel; i++)
+    // loop over the constraints and the desired point
+    for( int j=0; j<=bvhViewer->constraints.size(); j++)
     {
-        // get the position perturbed by delta theta 
         //std::cout << "new difference" << std::endl;
-        glm::vec3 jointPos2 = getJointWorldPos(index, i, false);
-        // std::cout << jointPos2.x << " " << jointPos2.y << " " << jointPos2.z << std::endl;
-        //std::cout << jointPos1.x << " " << jointPos1.x << " " << jointPos1.x << std::endl;
-        // set the entries accordingly
-        jacobian(0,i-3) = (jointPos2.x - jointPos1.x) / deltaTheta;
-        jacobian(1,i-3) = (jointPos2.y - jointPos1.y) / deltaTheta;
-        jacobian(2,i-3) = (jointPos2.z - jointPos1.z) / deltaTheta;
+        // loop over the columns
+        for(int i = 3; i < bvhViewer->bvhObj->num_channel; i++)
+        {
+            // get the position perturbed by delta theta in each channel
+            glm::vec3 jointPos2;
+            if(j == bvhViewer->constraints.size())
+                jointPos2 = getJointWorldPos(index, i, false);
+            else
+                jointPos2 = getJointWorldPos(bvhViewer->constraints[j]->index, i, false);
+            // std::cout << jointPos2.x << " " << jointPos2.y << " " << jointPos2.z << std::endl;
+            //std::cout << jointPos1.x << " " << jointPos1.x << " " << jointPos1.x << std::endl;
+            // set the entries accordingly
+            jacobian( j*3    , i-3 ) = (jointPos2.x - jointPos1.x) / deltaTheta;
+            jacobian( j*3 + 1, i-3 ) = (jointPos2.y - jointPos1.y) / deltaTheta;
+            jacobian( j*3 + 2, i-3 ) = (jointPos2.z - jointPos1.z) / deltaTheta;
+        }
+
     }
 
-    //std::cout << "jacobian:\n" << jacobian << std::endl;
+    std::cout << "jacobian:\n" << jacobian << std::endl;
     return jacobian;
 }
 
@@ -57,7 +66,7 @@ Eigen::MatrixXf IKinematics::invertJacobian(Eigen::MatrixXf jacobian)
     //std::cout << "inverse jacobian:\n " << invJacobian << std::endl;
     //std::cout << (jacobian * jacobian.transpose()).inverse() << std::endl;
     //std::cout << (jacobian * jacobian.transpose()) << std::endl;
-    //std::cout << "inverse\n" << invJacobian << std::endl;
+    std::cout << "inverse\n" << invJacobian << std::endl;
     return invJacobian;
 }
 
@@ -142,19 +151,71 @@ glm::vec3 IKinematics::getJointWorldPos(int index, int channelIndex, bool test)
     return glm::vec3(jointPos.x, jointPos.y, jointPos.z);
 }
 
+glm::mat4 IKinematics::getJointWorldTransform(int index)
+{
+    // a stack of joints that go from desired joint to root
+    std::deque<BVH::Joint*> pathToRoot;
+    // get the joint at desired index
+    BVH::Joint* current = bvhViewer->bvhObj->joints[ index ];
+
+    // stops a the root
+    while(current->parent != NULL)
+    {
+        pathToRoot.push_front(current);
+        current = current->parent;
+    }
+    // include the root
+    pathToRoot.push_front(current);
+
+    // initialise an identity matrix for storing translations and rotations for the joint
+    glm::mat4 transform(1.0);
+
+    // loop over the path to the joint starting at the root
+    for( int i=0; i<pathToRoot.size(); i++)
+    {
+        //std::cout << "joint " << i << std::endl;
+        BVH::Joint* joint = pathToRoot[i];
+        // then apply translation
+        transform = glm::translate(transform, glm::vec3( joint->offset[ 0 ], joint->offset[ 1 ], joint->offset[ 2 ]));
+        
+        for ( int j=0; j<joint->channels.size(); j++ )
+        {
+            BVH::Channel *  channel = joint->channels[ j ];
+            // store the rotation of the joint in the transform
+            if ( channel->type == BVH::X_ROTATION )
+                transform = glm::rotate( transform, (float)glm::radians(bvhViewer->bvhObj->motion[ bvhViewer->currentFrame * bvhViewer->bvhObj->num_channel + channel->index ]), glm::vec3( 1.0f, 0.0f, 0.0f ));
+            else if ( channel->type == BVH::Y_ROTATION )
+                transform = glm::rotate( transform, (float)glm::radians(bvhViewer->bvhObj->motion[ bvhViewer->currentFrame * bvhViewer->bvhObj->num_channel + channel->index ]), glm::vec3( 0.0f, 1.0f, 0.0f ));
+            else if ( channel->type == BVH::Z_ROTATION )
+                transform = glm::rotate( transform, (float)glm::radians(bvhViewer->bvhObj->motion[ bvhViewer->currentFrame * bvhViewer->bvhObj->num_channel + channel->index ]), glm::vec3( 0.0f, 0.0f, 1.0f ));
+        }
+    }
+
+    return transform;
+}
+
 // compute the inverse inematics of a joint at given index for desired position t
 void IKinematics::computeIK(glm::vec3 t, int index)
 {
     // get the vector E = t-c
-    glm::vec3 dif = t - getJointWorldPos(index, false);
-    Eigen::Vector3f E;
-    E(0) = dif.x;
-    E(1) = dif.y;
-    E(2) = dif.z;
+    Eigen::VectorXf E(3*(bvhViewer->constraints.size() + 1));
+
+    for ( int i=0; i<=bvhViewer->constraints.size(); i++)
+    {
+        glm::vec3 diff;
+        if(i == bvhViewer->constraints.size())
+            diff = t - getJointWorldPos(index, false);
+        else
+            diff = bvhViewer->constraints[i]->worldPos - getJointWorldPos(bvhViewer->constraints[i]->index, false);
+        
+        E( 3*i + 0 ) = diff.x;
+        E( 3*i + 1 ) = diff.y;
+        E( 3*i + 2 ) = diff.z;
+    }
 
     // compute the jacobian and invert it
     // Eigen::MatrixXf jacobian = computeJacobian(index, 1);
-    Eigen::MatrixXf invJacobian = invertJacobian(computeJacobian(index, 1));
+    Eigen::MatrixXf invJacobian = invertJacobian(computeJacobian(index));
 
     // difference in angles 
     deltaAngles = invJacobian * E;

@@ -35,9 +35,11 @@ class BVHWidget : public QGLWidget
     {
         // position in world space
         glm::vec3 worldPos;
+        // vector to pos in world space from joint pos
+        glm::vec3 offset;
         // index of the joint it refers to
         int index;
-    }
+    };
 
     // constructor
     BVHWidget(QWidget *parent);
@@ -76,13 +78,14 @@ class BVHWidget : public QGLWidget
     // check that click is on a joint
     void checkJointClick(float mouseX, float mouseY, const BVH::Joint* joint, glm::mat4 transform);
     void checkConstraintsClick(float mouseX, float mouseY, glm::mat4 transform);
-    bool containsJoint(int index);
+    bool checkConstraint(int index);
 
 
     // figure data
     glm::vec3 getJointWorldPos(int index);
     bool testLength(glm::vec3 t, int index);
     void renderJoints(const BVH::Joint* joint);
+    void renderConstraints();
     void saveNewFrame(int frameIndex);
 
 

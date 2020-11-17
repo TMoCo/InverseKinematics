@@ -1,3 +1,5 @@
+#define GLM_ENABLE_EXPERIMENTAL
+
 #include <iostream>
 #include <fstream>
 #include <math.h>
@@ -8,14 +10,17 @@
 #include <QApplication>
 
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/string_cast.hpp>
 #include "BVHWidget.h"
+
+
 
 static float light_position[] = {0.0, 0.0, 1.0, 0.0};		
 
 // Constructor
 BVHWidget::BVHWidget(QWidget *parent) : 
     QGLWidget(parent),
-    BVHfileName("./bvh/05_06.bvh")
+    BVHfileName("./bvh/arm.bvh")
 {
 
     // Bvh data
@@ -34,7 +39,7 @@ BVHWidget::BVHWidget(QWidget *parent) :
     // init mouse interaction variables
     selectedJoint = -1;
     selectedConstraint = -1;
-    selectedJoints.resize(0);
+    constraints.resize(0);
     clickRadius = 0.5; // the radius of a joint sphere
     pressedButton = 0;
 
@@ -153,6 +158,8 @@ void BVHWidget::paintGL()
     glEnd();
     glPopMatrix();
 
+    renderConstraints();
+
     // translate the figure to the origin 
     glTranslatef(-bvhObj->motion[ currentFrame * bvhObj->num_channel     ], 
                  -bvhObj->motion[ currentFrame * bvhObj->num_channel + 1 ], 
@@ -166,7 +173,7 @@ void BVHWidget::paintGL()
     // render the joints as spheres
     renderJoints(bvhObj->GetJoint(0));
 
-    renderFreeJoints(bvhObj->GetJoint(0))
+    //renderFreeJoints(bvhObj->GetJoint(0))
 }
 
 // Keep the width and height of the opengl widget constant for simplicity
@@ -187,36 +194,43 @@ void BVHWidget::mousePressEvent(QMouseEvent *event)
     HVect vNow = mouseToWorld(event->localPos().x(), event->localPos().y());
     // initialise the joint index
     selectedJoint = -1;
+    selectedConstraint = -1;
     pressedButton = event->button();
 
     switch(pressedButton)
     {
         case(Qt::LeftButton):
-            // check if a joint was found
-            checkJointClick(vNow.x, vNow.y, bvhObj->GetJoint(0), getArcBallTransform());
-
             // check that shift button is pressed
             if (QApplication::keyboardModifiers() == Qt::ShiftModifier)
                 shiftSel = true;
+            else
+                shiftSel = false;
+
+            // check if a joint was found
+            checkJointClick(vNow.x, vNow.y, bvhObj->GetJoint(0), getArcBallTransform());
             
             // set dragging to true if selected a joint
             if (selectedJoint != -1)
             {
                 dragging = true;
                 // shift clicking a joint, check in constraints, add to it if not
-                if (shiftSel && !containsJoint(selectedJoint))
+                if (shiftSel && !checkConstraint(selectedJoint))
                 {
                     Constraint* newConstraint = new Constraint();
                     newConstraint->worldPos = iKinematics->getJointWorldPos(selectedJoint, false);
                     newConstraint->index = selectedJoint;
+                    newConstraint->offset = glm::vec3(0.0);
                     constraints.push_back(newConstraint);
+                    //selectedConstraint = constraints.size() - 1; 
                 }
             }
             
-            // checkConstraints
+            // checkConstraints, sets selectedConstraint if click found
+            checkConstraintsClick(vNow.x, vNow.y, getArcBallTransform());
 
-            if (selectedConstraint != -1)
-            // also check whether we are shift clicking to add
+            if(selectedConstraint != -1)
+                dragging = true;
+            
             
             break;
         case(Qt::RightButton):
@@ -255,14 +269,21 @@ void BVHWidget::mouseMoveEvent(QMouseEvent *event)
         case(Qt::LeftButton):
             if(dragging)
             {
-                // get the desired position of the selected joint
-                glm::vec3 goalPos = iKinematics->getJointWorldPos(selectedJoint, false) + mouseMove;
-
+                //std::cout << "dragging" << std::endl;
                 // shift select means we are updating the desired position of a single point without immediately using IK
                 if(shiftSel)
-                    // move the selected joint without changing the figure with IK
-                     
+                {
+                    // move the selected constraint without changing the figure with IK
+                    //std::cout << "move constraint at " << selectedConstraint << std::endl;
+                    constraints[selectedConstraint]->offset += mouseMove;
+                    //std::cout << glm::to_string(constraints[selectedConstraint]->offset) << std::endl;
+                }
+                // get the desired position of the selected joint
                 else
+                {
+                    glm::vec3 goalPos = iKinematics->getJointWorldPos(selectedJoint, false) + mouseMove;
+                    iKinematics->computeIK(goalPos, selectedJoint);
+                }
                 //glm::vec3 t = iKinematics->getJointWorldPos(selectedJoint, false);
                 //std::cout << "joint : " << selectedJoint << " pos: " << t.x << " " << t.y << " " << t.z << std::endl;
                 //std::cout << goalPos.x << " " << goalPos.y << " " << goalPos.z << std::endl;
@@ -270,7 +291,6 @@ void BVHWidget::mouseMoveEvent(QMouseEvent *event)
                 // test if the goal position is legal (within the maximum length available to the joints)
                 // if (testLength(goalPos, selectedJoint))
                     // apply IK to get the new angles
-                    iKinematics->computeIK(goalPos, selectedJoint);
             }
             break;
 
@@ -322,7 +342,7 @@ void BVHWidget::checkJointClick(float mouseX, float mouseY, const BVH::Joint* jo
 			transform = glm::rotate(transform, (float)glm::radians(bvhObj->motion[ channel->index ]), glm::vec3(0.0f, 0.0f, 1.0f ));
 	}
 
-    // apply the transformation to the root position to get the current joint's position
+    // apply the transformation to the root position to get the current joint's position with respect to the origin
     glm::vec4 jointPos = transform * glm::vec4(0.0, 0.0, 0.0, 1.0);
     
     //std::cout << "joint : " << joint->index << " pos: " << jointPos.x << " " << jointPos.y << " " << jointPos.z << std::endl;
@@ -333,7 +353,6 @@ void BVHWidget::checkJointClick(float mouseX, float mouseY, const BVH::Joint* jo
     // test we are in click radius
     if(glm::distance(glm::vec3(jointPos.x, jointPos.y , jointPos.z), glm::vec3(mouseX, mouseY, jointPos.z)) < clickRadius)
     {
-        std::cout << "\n\nfound\n" << std::endl;
         // no previously selected joints
         if (selectedJoint == -1) 
             selectedJoint = joint->index; 
@@ -350,23 +369,37 @@ void BVHWidget::checkJointClick(float mouseX, float mouseY, const BVH::Joint* jo
     }
 }
 
-bool BVHWidget::checkConstraintsClick(float mouseX, float mouseY, glm::mat4 transform)
+void BVHWidget::checkConstraintsClick(float mouseX, float mouseY, glm::mat4 transform)
 {
     // iterate over constraints
+    
+    //std::cout << "mouse: " << glm::to_string(glm::vec3(mouseX, mouseY, 0.0)) << std::endl;
     for(int i=0; i<constraints.size(); i++)
     {
+        // difference between constraint pos and joint pos
+        glm::vec3 diff(constraints[i]->worldPos - iKinematics->getJointWorldPos(constraints[i]->index, false));
+        // transform position to be in same system as figure
+        glm::vec4 constraintPos = transform * (iKinematics->getJointWorldTransform(constraints[i]->index) * glm::vec4(0.0, 0.0, 0.0, 1.0) + glm::vec4(constraints[i]->offset, 0.0));
+        //std::cout << "constraint pos:" << glm::to_string(constraintPos) << std::endl;
         
+        if(glm::distance(glm::vec3(constraintPos.x, constraintPos.y , constraintPos.z), glm::vec3(mouseX, mouseY, constraintPos.z)) < clickRadius)
+        {
+            //std::cout << "found constraint" << std::endl;
+            selectedConstraint = i;
+        }
     }
+    //std::cout << selectedConstraint << std::endl;
 }
 
 bool BVHWidget::checkConstraint(int index)
 {
-    // iterate over constraints set checking whether joint is a constraint
+    // iterate over constraints set, checking whether joint is a constraint
     for(int i=0; i<constraints.size(); i++)
     {
         if (constraints[i]->index == index)
             return true;    
     }
+    //std::cout << "not in constraints" << std::endl;
     return false;
 }
 
@@ -415,6 +448,7 @@ bool BVHWidget::testLength(glm::vec3 t, int index)
     else
         return false;
 }
+
 //
 // Figure methods
 //
@@ -452,9 +486,7 @@ void BVHWidget::renderJoints(const BVH::Joint* joint)
 	gluQuadricNormals( quad_obj, GLU_SMOOTH );
 
     // switch colour for selected joint
-    if ((joint->index == selectedJoint) && shiftSel)
-        glColor3f(0.0,1.0,0.0);
-    else if (joint->index == selectedJoint)
+    if (joint->index == selectedJoint)
         glColor3f(1.0,0.0,0.0);
     else
         glColor3f(0.0,0.0,1.0);
@@ -469,46 +501,6 @@ void BVHWidget::renderJoints(const BVH::Joint* joint)
     }
 
     glPopMatrix();
-
-}
-
-// return the global position of a given joint
-glm::vec3 BVHWidget::getJointWorldPos(int index)
-{
-    // start at the root
-    glm::vec4 rootPos(bvhObj->motion[ currentFrame * bvhObj->num_channel   ], 
-                    bvhObj->motion[ currentFrame * bvhObj->num_channel + 1 ], 
-                    bvhObj->motion[ currentFrame * bvhObj->num_channel + 2 ], 1.0);
-    // check if we are at the root, if so just return the position data at the start of the bvh's current frame data
-    if(bvhObj->GetJoint(index)->parent == NULL)
-        return glm::vec3(rootPos.x, rootPos.y, rootPos.z);
-    
-    // get the joint at desired index
-    BVH::Joint* current = bvhObj->joints[ index ];
-    // initialise an identity matrix for storing translations and rotations for the joint
-    glm::mat4 transform(1.0);
-    // while loop for going back up the tree
-    while(current->parent != NULL)
-    {
-        // first rotate by the joint's rotation ...
-        for (int i=0; i<current->channels.size(); i++ )
-        {
-            BVH::Channel *  channel = current->channels[ i ];
-            if ( channel->type == BVH::ChannelEnum::X_ROTATION )
-                transform = glm::rotate(transform, (float)glm::radians(bvhObj->motion[ channel->index ]), glm::vec3(1.0f, 0.0f, 0.0f));
-            else if ( channel->type == BVH::ChannelEnum::Y_ROTATION )
-                transform = glm::rotate(transform, (float)glm::radians(bvhObj->motion[ channel->index ]), glm::vec3(0.0f, 1.0f, 0.0f));
-            else if ( channel->type == BVH::ChannelEnum::Z_ROTATION )
-                transform = glm::rotate(transform, (float)glm::radians(bvhObj->motion[ channel->index ]), glm::vec3(0.0f, 0.0f, 1.0f));
-        }
-        // ... then translate (order matters since we are traversing up the tree)
-        transform = glm::translate(transform,glm::vec3((float)current->offset[ 0 ] , (float)current->offset[ 1 ], (float)current->offset[ 2 ]));
-        // point to current's parent
-        current = current->parent;
-    }
-    // apply the transformation to the root position and return as a vec3
-    glm::vec4 jointPos = transform * rootPos;
-    return glm::vec3(jointPos.x, jointPos.y, jointPos.z);
 }
 
 // overwrties motion data with new frame data (angles from IK)
@@ -522,6 +514,36 @@ void BVHWidget::saveNewFrame(int frameIndex)
     }
 }
 
+
+void BVHWidget::renderConstraints()
+{
+    glPushMatrix();
+    static GLUquadricObj *  quad_obj = NULL;
+	if ( quad_obj == NULL )
+		quad_obj = gluNewQuadric();
+	gluQuadricDrawStyle( quad_obj, GLU_FILL );
+	gluQuadricNormals( quad_obj, GLU_SMOOTH );
+
+    // constraints are in green
+    glColor3f(0.0,1.0,0.0);
+
+    glm::vec4 root(0.0, 0.0, 0.0, 1.0);
+
+    // loop over constraints and render
+    for(int i=0; i<constraints.size(); i++)
+    {
+        //std::cout << constraints[i]->index << std::endl;
+        //std::cout << glm::to_string(constraints[i]->offset) << std::endl;
+        glm::vec4 pos = iKinematics->getJointWorldTransform(constraints[i]->index) * root + glm::vec4(constraints[i]->offset, 0.0);
+        //std::cout << "world pos: " << glm::to_string(iKinematics->getJointWorldPos(constraints[i]->index, false)) <<std::endl;
+        // std::cout << "calculated pos: " << glm::to_string(pos) << std::endl;
+        glPushMatrix();
+        glTranslatef(pos.x, pos.y, pos.z);
+        gluSphere(quad_obj, 0.6, 10, 10);
+        glPopMatrix();
+    }
+    glPopMatrix();
+}
 //
 // Slot methods
 //
@@ -536,6 +558,9 @@ void BVHWidget::loadBVHFile(QString fileName)
 
     // also reset frame data
     currentFrame = 0;
+    // and figure data
+    constraints.resize(0);
+
 }
 
 // slot method that is called when we are incrementing the frame in the animation
