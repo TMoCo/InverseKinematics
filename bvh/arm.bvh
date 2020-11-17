@@ -1,0 +1,25 @@
+HIERARCHY
+ROOT Shoulder
+{
+    OFFSET 0.000000 0.000000 0.000000 
+    CHANNELS 6 Xposition Yposition Zposition Zrotation Yrotation Xrotation
+    JOINT Elbow
+    {
+        OFFSET 0.000000 4.000000 0.000000
+        CHANNELS 3 Zrotation Yrotation Xrotation
+        JOINT Wrist
+        {
+            OFFSET 0.000000 4.000000 0.000000
+            CHANNELS 3 Zrotation Yrotation Xrotation
+            End Site
+            {
+                OFFSET 0.000000 0.000000 0.000000
+                
+            }
+        }
+    }
+}
+MOTION
+Frames: 1
+Frame Time: 1
+0.000000 0.000000 0.000000 0.000000 120.000000 0.000000 45.000000 0.000000 0.000000 0.000000 0.000000 0.000000
