@@ -12,7 +12,8 @@ class CtrlButton : public QPushButton
 {
     Q_OBJECT
     public:
-    //  constructor, set the size 
+
+    //  constructor, sets the geometry of button 
     CtrlButton(QString label, QWidget *parent);
 };
 
@@ -22,33 +23,40 @@ class Window : public  QMainWindow
     Q_OBJECT
     public:
 
+
     // constructor
     Window(QWidget *parent);
     // destructor
     ~Window();
 
+
     // slots for file loading and saving
     public slots:
     void loadFileDialog();
+    void saveFileDialog();
     void updateFrameSlider(int nFrames);
     void updateTimerInterval(int interval);
     void incrementFrame();
     void goToFirstFrame();
     void goToLastFrame();
-    //void multInterval();
+    
 
     // signals for file loading and saving
     signals:
-    void selectedBVH(QString fileName);
+    void selectedOpenBVH(QString fileName);
+    void selectedSaveBVH(QString fileName);
     
+
     private:
     // widget for rendering and interacting with BVH file
     BVHWidget *bvhWidget;
+
 
     // widgets for loading and saving BVH
     QMenu *fileMenu;
     QAction *open;
     QAction *save;
+
 
     // widgets for control dock
     QDockWidget *ctrlDock;
@@ -58,10 +66,23 @@ class Window : public  QMainWindow
     CtrlButton *play;
     CtrlButton *stop;
     CtrlButton *start;
-    CtrlButton *ffwrd;
+    CtrlButton *frwrd;
     CtrlButton *rewnd;
     CtrlButton *end;
     QSlider *frames;
+    
+
+    // widgets for IK dock
+    QDockWidget *ikDock;
+    QGroupBox *ikBox;
+    QGridLayout *ikLayout;
+    // widgets for controlling th IK
+    QSlider *dampeningLambda;
+    QLabel *dampeningLabel;
+    QCheckBox *dampening;
+    CtrlButton *saveFrame;
+    CtrlButton *resetArcBall;
+
 
     // timer for animating the scene
     QTimer *timer;

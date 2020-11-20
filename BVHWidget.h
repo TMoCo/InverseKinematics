@@ -30,28 +30,38 @@ class BVHWidget : public QGLWidget
     Q_OBJECT
     public:
 
-    // a positional constraint for inverse kinematics
-    struct Constraint
+    // a struct containing the nescessary data for inverse kinematics
+    struct SelectJoint
     {
-        // position in world space
-        glm::vec3 worldPos;
-        // vector to pos in world space from joint pos
-        glm::vec3 offset;
+        // goal position in world space
+        glm::vec3 goalPos;
         // index of the joint it refers to
         int index;
     };
 
     // constructor
     BVHWidget(QWidget *parent);
+    // destructor
     ~BVHWidget();
 
 
     // slots
     public slots:
+    // file i/o handling
     void loadBVHFile(QString fileName);
+    void saveBVHFile(QString filename);
     // called whenever the slider chages values
     void animateFigure(int frame);
-    void changePlayDir();
+    // update the playDir variable
+    void changePlayDirPlus();
+    void changePlayDirMinus();
+    // writes ik motion to bvh data
+    void saveFrame();
+    // update dampening variables
+    void setDampening(int state);
+    void updateLambda(int newLambda);
+    // reset the arcball for convenience
+    void resetRotation();
 
 
     signals:
@@ -77,21 +87,19 @@ class BVHWidget : public QGLWidget
     HVect mouseToWorld(float mouseX, float mouseY);
     // check that click is on a joint
     void checkJointClick(float mouseX, float mouseY, const BVH::Joint* joint, glm::mat4 transform);
-    void checkConstraintsClick(float mouseX, float mouseY, glm::mat4 transform);
-    bool checkConstraint(int index);
+    // checks if a joint is selected
+    bool checkSelected(int index);
 
 
-    // figure data
-    glm::vec3 getJointWorldPos(int index);
-    bool testLength(glm::vec3 t, int index);
-    void renderJoints(const BVH::Joint* joint);
-    void renderConstraints();
-    void saveNewFrame(int frameIndex);
+    // figure data and rendering
+    // render joints as spheres
+    void renderJoints(const BVH::Joint* joint, double* motion);
+    // recursively write joint data to file out stream
+    void writeJoint(std::ofstream& ostream, BVH::Joint* joint, int depth);
 
 
-    // method for returning arc ball transform, useful for mouse picking
+    // returns arc ball transform, useful for mouse picking
     glm::mat4 getArcBallTransform();
-
 
     public:
     // flag representing drag status
@@ -100,6 +108,10 @@ class BVHWidget : public QGLWidget
     bool rotating;
     // flag representing shift click select
     bool shiftSel;
+    // modified frame data
+    bool modified;
+    // (de)activate dampening
+    bool dampening;
 
 
     // mouse Input
@@ -115,11 +127,13 @@ class BVHWidget : public QGLWidget
 
     // Bvh data
     BVH *bvhObj;
+    double *currentMotion;
     std::string BVHfileName;
 
 
     // inverse kinematics 
     IKinematics* iKinematics;
+    int lambda;
 
 
     // animation variables
@@ -134,9 +148,8 @@ class BVHWidget : public QGLWidget
     // mouse picking varianbles
     float clickRadius;
     int selectedJoint;
-    int selectedConstraint;
     int pressedButton;
-    std::vector<Constraint*> constraints;
+    std::vector<SelectJoint*> selectedJoints;
 
 
     // widget size
