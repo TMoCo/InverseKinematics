@@ -21,3 +21,7 @@ With the libraries and Qt version 5.9.5 on Linux x86
 - execute
 
 Make sure the folder called bvh is in the same directory. It must contain at least the "arms.bvh" file. This will be updated later along with extra control.
+
+Application can read BVH files containing animations or poses. Saving a modified pose will overwrite the current frame. A desirable features is control points to constrain the movement of the pose when modifying it, may be added in the future when I have spare time.
+
+![Dungeon2](https://media.giphy.com/media/sH9Cq1mNDGGmPt0iUl/giphy.gif)
